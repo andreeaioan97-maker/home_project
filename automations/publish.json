@@ -1,0 +1,6 @@
+{
+  "repository": "andreeaioan97-maker/home_project",
+  "checks": [
+    ["python3", "-I", "scripts/check_project.py"]
+  ]
+}

@@ -78,11 +78,20 @@
   ul.items li.sel { background:var(--accent-soft); color:var(--accent); font-weight:600; }
   ul.items li span:last-child { color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
   .float { position:absolute; background:color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
-  #itemBar { left:50%; bottom:18px; transform:translateX(-50%); display:none; padding:5px; gap:4px; align-items:center; }
-  #itemBar.show { display:flex; }
+  #itemBar, #measureBar { left:50%; bottom:18px; transform:translateX(-50%); display:none; padding:5px; gap:4px; align-items:center; max-width:calc(100% - 32px); }
+  #itemBar.show, #measureBar.show { display:flex; }
   #itemBar span { padding:0 8px 0 6px; font-weight:600; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #itemBar button { background:transparent; }
-  #itemBar button:hover { background:var(--chip-hover); }
+  #measureBar span { padding:0 8px 0 6px; color:var(--muted); font-size:12px; }
+  #measureBar span b { color:var(--ink); }
+  #measureBar kbd { font:11px ui-monospace, monospace; background:var(--chip); border-radius:4px; padding:1px 5px; }
+  #itemBar button, #measureBar button { background:transparent; }
+  #itemBar button:hover, #measureBar button:hover { background:var(--chip-hover); }
+  ul.fit { max-height:260px; }
+  ul.fit li { display:block; line-height:1.35; padding:5px 8px; }
+  ul.fit li::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:#d64541; margin-right:7px; vertical-align:1px; }
+  ul.fit li.ok { cursor:default; color:var(--muted); }
+  ul.fit li.ok::before { background:#4c9a5b; }
+  @media (max-width: 760px) { #measureBar span .long { display:none; } }
   .toast { left:50%; top:14px; transform:translateX(-50%); padding:7px 14px; opacity:0; transition:opacity .2s; pointer-events:none; }
   .toast.show { opacity:1; }
   .legend { right:12px; bottom:12px; padding:7px 11px; font-size:11px; color:var(--muted); max-width:250px; }
@@ -111,6 +120,8 @@
   <button id="tDoorsClosed" title="Close or open all the doors">Doors: open</button>
   <button id="tLabels" class="on">Labels</button>
   <button id="tPipes" class="on">Plumbing</button>
+  <button id="tMeasure" title="Measure distances between two points (M)">Measure</button>
+  <button id="tFit" title="Check overlaps, blocked doors and free space around furniture (F)">Check fit</button>
   <span class="spacer"></span>
   <button id="undo" title="Ctrl/Cmd+Z">Undo</button>
   <button id="shot">Screenshot</button>
@@ -120,6 +131,12 @@
 <div class="layout">
   <aside>
     <div class="card" id="selCard"><h2>Selected</h2><div id="props" class="props"></div></div>
+
+    <div class="card" id="fitCard" hidden>
+      <h2>Fit check <span id="fitCount"></span></h2>
+      <ul id="fitList" class="items fit"></ul>
+      <p class="hint" style="margin-top:8px">Green = free space a piece needs (rule-of-thumb distances) · amber = door swings · red = a problem. Click a line to select the piece; change what it needs under "Free space".</p>
+    </div>
 
     <div class="card">
       <h2>Style</h2>
@@ -148,6 +165,7 @@
       <p class="hint" style="margin-top:8px">Drag the background to orbit, right-drag to pan, scroll to zoom. Double-click a room to fly to it.<br>
       Click a piece to select it, then drag it; it snaps to walls (hold <kbd>Alt</kbd> for free 1 cm moves). Click a floor to change its finish, a window to add curtains or blinds.<br>
       <kbd>R</kbd> rotate 90° · <kbd>Shift</kbd>+<kbd>R</kbd> back · arrows nudge 1 cm (<kbd>Shift</kbd> 10 cm) · <kbd>⌘/Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Del</kbd> remove · <kbd>Esc</kbd> deselect · <kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> undo.<br>
+      <kbd>M</kbd> measure: click two points; it snaps to walls and furniture edges (<kbd>Shift</kbd> keeps the line straight, <kbd>Alt</kbd> turns snapping off). <kbd>F</kbd> check fit: overlaps, pieces in walls or door swings, and free space in front of furniture. A selected piece shows its distance to the nearest wall or piece on each side.<br>
       Changes save automatically in this browser. Use Export to keep a copy.</p>
     </details>
   </aside>
@@ -155,6 +173,8 @@
     <div id="itemBar" class="float"><span id="barName"></span>
       <button data-a="rotL" title="Rotate left (Shift+R)">↺</button><button data-a="rotR" title="Rotate right (R)">↻</button>
       <button data-a="dup" title="Duplicate (⌘/Ctrl+D)">Duplicate</button><button data-a="del" class="danger" title="Remove (Del)">Remove</button></div>
+    <div id="measureBar" class="float"><span id="mText"><b>Measuring</b> · click two points<span class="long"> · <kbd>Shift</kbd> straight · <kbd>Alt</kbd> no snap</span></span>
+      <button id="mUndo" title="Remove the last measurement (Backspace)">Remove last</button><button id="mClear">Clear all</button><button id="mDone" title="Leave measuring (Esc)">Done</button></div>
     <div class="legend float">Draft plan, not measured · walls 2.6 m assumed · orange strips = plumbing/gas</div>
     <div id="toast" class="toast float"></div>
   </div>
@@ -271,7 +291,8 @@ let state = defaultState();
 try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && s.version === 1) state = Object.assign(defaultState(), s); } catch {}
 let selected = null; // {kind:'item'|'room', id}
 const undoStack = [];
-const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} };
+let fitOn = false, fitDirty = true; // fit check is recomputed on the next frame after any change
+const save = () => { fitDirty = true; try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} };
 const pushUndo = () => { undoStack.push(JSON.stringify(state)); if (undoStack.length > 80) undoStack.shift(); };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const M = v => v / 100;
@@ -417,7 +438,10 @@ function buildFloors() {
   }
 }
 
+const WALL_FOOT = []; // plan footprint of every wall piece (full height, whatever the cut-away): { poly, y0, y1 }
 function wallBox(dir, at, a, b, t, y0, y1, mat = wallMat) {
+  if (mat === wallMat && b - a > 0.5 && y1 - y0 > 0.5)
+    WALL_FOOT.push({ poly: dir === 'h' ? rectPoly(a, at - t / 2, b, at + t / 2) : rectPoly(at - t / 2, a, at + t / 2, b), y0, y1 });
   y1 = Math.min(y1, wallHeight);
   if (y1 - y0 <= 0.5 || b - a <= 0.5) return;
   const len = b - a, mid = (a + b) / 2;
@@ -434,7 +458,7 @@ function wallBox(dir, at, a, b, t, y0, y1, mat = wallMat) {
 }
 
 function buildWalls() {
-  wallsGroup.clear();
+  wallsGroup.clear(); WALL_FOOT.length = 0; fitDirty = true;
   const lines = new Map();
   const add = (dir, at, a, b, t) => {
     const k = dir + ':' + at;
@@ -765,7 +789,7 @@ function renderItem(it) {
   (BUILD[it.kind] || BUILD.box)(g, M(it.w), M(it.h), M(it.d), it.color, it);
   g.position.set(M(it.x), M(it.elev || 0), M(it.z));
   g.rotation.y = -THREE.MathUtils.degToRad(it.rot || 0);
-  g.userData.itemId = it.id;
+  g.userData.itemId = it.id; fitDirty = true; // a rebuilt piece needs its fit-check tint again
   if (g.userData.bulb && lightsOn) {
     const [bx, by, bz] = g.userData.bulb, warm = it.warm ?? 2700;
     const pl = new THREE.PointLight(kelvin(warm), (it.lumens ?? 400) / 400 * 1.2, g.userData.strip ? 2.5 : 6, 1.6);
@@ -843,7 +867,8 @@ function snapToWalls(it) { // pull a piece flush against the walls of the room i
   const hx = (cs * it.w + sn * it.d) / 2, hz = (sn * it.w + cs * it.d) / 2;
   const room = ROOMS.find(r => it.x >= r.x && it.x <= r.x + r.w && it.z >= r.y && it.z <= r.y + r.h); if (!room) return;
   const T = room.id === 'balcony' ? 3 : 6, D = 12;
-  const x0 = room.x + T, x1 = room.x + room.w - T, z0 = room.y + T, z1 = room.y + room.h - T;
+  // the balcony's inner side is the 12 cm living-room wall, not its own 6 cm one
+  const x0 = room.x + T, x1 = room.x + room.w - T, z0 = room.y + T, z1 = room.y + room.h - (room.id === 'balcony' ? 6 : T);
   if (Math.abs(it.x - hx - x0) < D) it.x = x0 + hx; else if (Math.abs(it.x + hx - x1) < D) it.x = x1 - hx;
   if (Math.abs(it.z - hz - z0) < D) it.z = z0 + hz; else if (Math.abs(it.z + hz - z1) < D) it.z = z1 - hz;
   it.x = Math.round(it.x * 10) / 10; it.z = Math.round(it.z * 10) / 10;
@@ -883,7 +908,8 @@ function renderPanel() {
       <div class="dims"><label><span>Width cm</span><input type="number" data-k="w" min="1" value="${it.w}"></label>
       <label><span>Depth cm</span><input type="number" data-k="d" min="1" value="${it.d}"></label>
       <label><span>Height cm</span><input type="number" data-k="h" min="1" value="${it.h}"></label></div>
-      <label>Off floor cm <input type="number" data-k="elev" min="0" value="${it.elev || 0}"></label>`}
+      <label>Off floor cm <input type="number" data-k="elev" min="0" value="${it.elev || 0}"></label>
+      <label title="Free floor space this piece needs in front of it, shown by Check fit. 0 = none; empty the box to go back to the suggested value.">Free space cm <input type="number" data-k="clear" min="0" step="5" value="${clearanceRule(it).front}" placeholder="auto"></label>`}
       <label>Rotation° <input type="number" data-k="rot" step="15" value="${it.rot || 0}"></label>
       ${LIGHT_KINDS.has(it.kind) ? `<label>Brightness lm <input type="number" data-k="lumens" min="50" step="50" value="${it.lumens ?? 400}"></label>
       <label>Warmth K <input type="number" data-k="warm" min="2000" max="6500" step="100" value="${it.warm ?? 2700}"></label>
@@ -898,7 +924,8 @@ function renderPanel() {
       inp.addEventListener('focus', pushUndo);
       inp.addEventListener('input', () => {
         const k = inp.dataset.k; let v = inp.value;
-        if (['w','d','h','elev','rot','lumens','warm'].includes(k)) { v = parseFloat(v); if (!isFinite(v)) return; if (k !== 'rot' && k !== 'elev') v = Math.max(1, v); }
+        if (k === 'clear' && v.trim() === '') { delete it.clear; save(); return; } // back to the suggested value
+        if (['w','d','h','elev','rot','lumens','warm','clear'].includes(k)) { v = parseFloat(v); if (!isFinite(v)) return; v = ['rot','elev','clear'].includes(k) ? (k === 'clear' ? Math.max(0, v) : v) : Math.max(1, v); }
         it[k] = v; renderItem(it); selBox.setFromObject(objs.get(it.id)); save(); if (k === 'name') { renderList(); $('barName').textContent = it.name; }
       });
     });
@@ -968,6 +995,252 @@ function action(a) {
   if (a === 'rotL' || a === 'rotR') { pushUndo(); it.rot = (((it.rot || 0) + (a === 'rotR' ? 90 : -90)) % 360 + 360) % 360; renderItem(it); selBox.setFromObject(objs.get(it.id)); save(); renderPanel(); }
 }
 
+/* ---------------- PLAN GEOMETRY (cm; a point is [x, z]; footprints are convex polygons) ---------------- */
+function rectPoly(x0, z0, x1, z1) { return [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]; }
+function itemPoly(it, x0 = -it.w / 2, x1 = it.w / 2, z0 = -it.d / 2, z1 = it.d / 2) { // a rectangle in the piece's own frame (front = +z) → plan
+  const a = THREE.MathUtils.degToRad(it.rot || 0), c = Math.cos(a), s = Math.sin(a);
+  return rectPoly(x0, z0, x1, z1).map(([lx, lz]) => [it.x + lx * c - lz * s, it.z + lx * s + lz * c]);
+}
+function penetration(A, B) { // how deep two convex polygons overlap (cm), 0 when apart (separating axis test)
+  let best = Infinity;
+  for (const P of [A, B]) for (let i = 0; i < P.length; i++) {
+    const [x1, z1] = P[i], [x2, z2] = P[(i + 1) % P.length];
+    let nx = z1 - z2, nz = x2 - x1; const L = Math.hypot(nx, nz); if (L < 1e-9) continue; nx /= L; nz /= L;
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const [x, z] of A) { const d = x * nx + z * nz; if (d < a0) a0 = d; if (d > a1) a1 = d; }
+    for (const [x, z] of B) { const d = x * nx + z * nz; if (d < b0) b0 = d; if (d > b1) b1 = d; }
+    const o = Math.min(a1, b1) - Math.max(a0, b0); if (o <= 0) return 0; if (o < best) best = o;
+  }
+  return best;
+}
+const bounds = P => { const xs = P.map(p => p[0]), zs = P.map(p => p[1]); return { x0:Math.min(...xs), x1:Math.max(...xs), z0:Math.min(...zs), z1:Math.max(...zs) }; };
+const SOFT = new Set(['rug', 'note', 'ledstrip']); // never collide with anything
+const MOVABLE = new Set(['chair', 'stool']);      // tuck under tables and do not block free space
+const isSolid = it => !SOFT.has(it.kind) && it.h > 2;
+const topOf = it => (it.elev || 0) + it.h;
+const vOverlap = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > 1;
+const roomOf = it => ROOMS.find(r => it.x >= r.x && it.x <= r.x + r.w && it.z >= r.y && it.z <= r.y + r.h);
+const LOW = 60; // free space is about the floor: only walls and pieces starting below this height block it
+
+// Rule-of-thumb free space (cm): "front" in front of the piece, "side" on at least one of its long sides.
+function clearanceRule(it) {
+  if ((it.elev || 0) >= LOW || !isSolid(it)) return { front:0, side:0 };
+  const n = (it.name || '').toLowerCase(), k = it.kind, kitchen = roomOf(it)?.id === 'kitchen';
+  let front = 0, side = 0;
+  if (k === 'bed') { front = 50; side = 60; }
+  else if (k === 'sofa') front = 40;
+  else if (k === 'tub') side = 60;
+  else if (['toilet', 'basin', 'shower', 'washer'].includes(k)) front = 60;
+  else if (k === 'oven') front = kitchen ? 90 : 60;
+  else if (k === 'table') front = /coffee/.test(n) ? 0 : /desk/.test(n) ? 70 : 60;
+  else if (k === 'shelf') front = 50;
+  else if (k === 'box') {
+    if (/wardrobe/.test(n)) front = 70;
+    else if (/shoe/.test(n)) front = 50;
+    else if (/dress|chest|drawer/.test(n)) front = 60;
+    else if (/fridge|oven|cabinet|counter|sink|dishwasher/.test(n)) front = kitchen ? 90 : 50;
+  }
+  if (typeof it.clear === 'number') front = it.clear;
+  return { front, side };
+}
+
+const DOOR_NAMES = ['Entrance door', 'Kitchen door', 'Living room door', 'Inner hall door', 'Bathroom door', 'Bedroom door', 'Balcony door'];
+const DOORWAYS = OPENINGS.filter(o => o.kind === 'door'); // same order as DOOR_LEAVES
+const DOOR_ZONES = DOOR_LEAVES.map(([h, o, c], i) => { // the swing (a quarter circle) plus the passage through the wall
+  const r = Math.hypot(o[0] - h[0], o[1] - h[1]) - 1, a0 = Math.atan2(o[1] - h[1], o[0] - h[0]);
+  let d = Math.atan2(c[1] - h[1], c[0] - h[0]) - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+  const swing = [[h[0], h[1]]];
+  for (let k = 0; k <= 12; k++) { const a = a0 + d * k / 12; swing.push([h[0] + r * Math.cos(a), h[1] + r * Math.sin(a)]); }
+  const w = DOORWAYS[i], pass = w.dir === 'h' ? rectPoly(w.from + 1, w.at - 15, w.to - 1, w.at + 15) : rectPoly(w.at - 15, w.from + 1, w.at + 15, w.to - 1);
+  return { name:DOOR_NAMES[i], swing, pass };
+});
+
+/* ---------------- OVERLAYS (flat shapes, strips and labels drawn over the plan) ---------------- */
+function clearGroup(g) { for (const c of [...g.children]) { g.remove(c); c.traverse(n => { if (!n.isSprite) n.geometry?.dispose(); n.material?.map?.dispose(); n.material?.dispose(); }); } }
+function flatPoly(poly, color, opacity, y) {
+  const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(M(x), -M(z))));
+  const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, transparent:true, opacity, depthWrite:false, side:THREE.DoubleSide }));
+  m.rotation.x = -Math.PI / 2; m.position.y = y; m.renderOrder = 2; return m;
+}
+function strip(a, b, y, color, width = 1.6) { // flat line between two plan points, drawn on top of everything
+  const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(M(len), 0.001), M(width)), new THREE.MeshBasicMaterial({ color, depthTest:false, transparent:true }));
+  m.rotation.set(-Math.PI / 2, -Math.atan2(dz, dx), 0, 'YXZ');
+  m.position.set(M((a[0] + b[0]) / 2), y, M((a[1] + b[1]) / 2)); m.renderOrder = 11; return m;
+}
+function dimension(g, a, b, y, color, label, bg) { // strip with end ticks and a centred label
+  const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz) || 1, px = -dz / len * 6, pz = dx / len * 6;
+  g.add(strip(a, b, y, color));
+  for (const p of [a, b]) g.add(strip([p[0] - px, p[1] - pz], [p[0] + px, p[1] + pz], y, color));
+  const s = textSprite(label, { px:34, scale:0.34, fg:'#ffffff', bg }); s.renderOrder = 12;
+  s.position.set(M((a[0] + b[0]) / 2), y + 0.06, M((a[1] + b[1]) / 2)); g.add(s);
+}
+const cmLabel = d => `${Math.round(d)} cm`;
+
+/* ---------------- FIT CHECK ---------------- */
+const fitGroup = new THREE.Group(); scene.add(fitGroup);
+let tinted = new Set();
+function tint(id, on) {
+  objs.get(id)?.traverse(n => {
+    const m = n.material; if (!n.isMesh || !m?.emissive || m === glassMat) return;
+    if (on) { n.userData.e0 ??= [m.emissive.getHex(), m.emissiveIntensity]; m.emissive.set(0xc0392b); m.emissiveIntensity = 0.45; }
+    else if (n.userData.e0) { m.emissive.setHex(n.userData.e0[0]); m.emissiveIntensity = n.userData.e0[1]; delete n.userData.e0; }
+  });
+}
+function checkFit() {
+  const problems = [], zones = [], doors = DOOR_ZONES.map(z => ({ ...z, blocked:false }));
+  const solid = state.items.filter(isSolid), poly = new Map(solid.map(it => [it.id, itemPoly(it)]));
+  // 1. pieces overlapping each other (a chair or stool pushed under a table is fine)
+  for (let i = 0; i < solid.length; i++) for (let j = i + 1; j < solid.length; j++) {
+    const a = solid[i], b = solid[j];
+    if (!vOverlap(a.elev || 0, topOf(a), b.elev || 0, topOf(b))) continue;
+    if ((MOVABLE.has(a.kind) && /table/.test(b.kind)) || (MOVABLE.has(b.kind) && /table/.test(a.kind))) continue;
+    const p = penetration(poly.get(a.id), poly.get(b.id));
+    if (p > 1.5) problems.push({ ids:[a.id, b.id], text:`${a.name} and ${b.name} overlap by ${cmLabel(p)}` });
+  }
+  // 2. pieces pushed into a wall
+  for (const it of solid) {
+    let worst = 0;
+    for (const w of WALL_FOOT) if (vOverlap(it.elev || 0, topOf(it), w.y0, w.y1)) worst = Math.max(worst, penetration(poly.get(it.id), w.poly));
+    if (worst > 1.5) problems.push({ ids:[it.id], text:`${it.name} goes ${cmLabel(worst)} into a wall` });
+  }
+  // 3. pieces in a door's swing or its doorway (anything lower than the 2 m door)
+  for (const it of solid) {
+    if ((it.elev || 0) >= 200) continue;
+    for (const d of doors) {
+      const inSwing = penetration(poly.get(it.id), d.swing) > 1.5, inPass = penetration(poly.get(it.id), d.pass) > 1.5;
+      if (inSwing) d.blocked = true;
+      if (inSwing || inPass) problems.push({ ids:[it.id], text: inSwing ? `${it.name} is in the swing of the ${d.name.toLowerCase()}` : `${it.name} narrows the ${d.name.toLowerCase().replace(' door', '')} doorway` });
+    }
+  }
+  // 4. free space in front of / beside pieces
+  const lowWalls = WALL_FOOT.filter(w => w.y0 < LOW).map(w => ({ poly:w.poly, name:'a wall' }));
+  for (const it of solid) {
+    const rule = clearanceRule(it); if (!rule.front && !rule.side) continue;
+    const obs = lowWalls.concat(solid.filter(o => o.id !== it.id && !MOVABLE.has(o.kind) && (o.elev || 0) < LOW).map(o => ({ poly:poly.get(o.id), name:o.name })));
+    const blocker = z => obs.find(o => penetration(z, o.poly) > 0.5);
+    const free = (make, need) => { // deepest free zone up to "need" (binary search), and what stops it
+      const stop = blocker(make(need)); if (!stop) return { depth:need };
+      let lo = 0, hi = need; for (let k = 0; k < 9; k++) { const m = (lo + hi) / 2; if (blocker(make(m))) hi = m; else lo = m; }
+      return { depth:lo, stop:blocker(make(hi)) || stop };
+    };
+    if (rule.front) {
+      const make = dep => itemPoly(it, -it.w / 2 + 1, it.w / 2 - 1, it.d / 2, it.d / 2 + dep), r = free(make, rule.front), ok = r.depth >= rule.front - 2;
+      zones.push({ poly:make(rule.front), ok });
+      const where = it.kind === 'bed' ? 'at the foot' : 'in front';
+      if (!ok) problems.push({ ids:[it.id], text:`${it.name}: ${cmLabel(r.depth)} of ${cmLabel(rule.front)} free ${where} (${r.stop.name} is in the way)` });
+    }
+    if (rule.side) { // beds: skip the head end where nightstands go; baths: a standing spot mid-way
+      const [z0, z1] = it.kind === 'bed' ? [-it.d / 2 + 50, it.d / 2] : [-30, 30];
+      const sides = [dep => itemPoly(it, it.w / 2, it.w / 2 + dep, z0, z1), dep => itemPoly(it, -it.w / 2 - dep, -it.w / 2, z0, z1)];
+      const res = sides.map(make => ({ make, ...free(make, rule.side) })), good = res.filter(r => r.depth >= rule.side - 2);
+      (good.length ? good : res).forEach(r => zones.push({ poly:r.make(rule.side), ok:good.length > 0 }));
+      if (!good.length) problems.push({ ids:[it.id], text:`${it.name}: no long side has ${cmLabel(rule.side)} free to get in (best ${cmLabel(Math.max(...res.map(r => r.depth)))})` });
+    }
+  }
+  return { problems, zones, doors };
+}
+function refreshFit() {
+  fitDirty = false; clearGroup(fitGroup);
+  const now = new Set();
+  if (fitOn) {
+    const { problems, zones, doors } = checkFit();
+    for (const z of zones) fitGroup.add(flatPoly(z.poly, z.ok ? 0x4c9a5b : 0xd64541, z.ok ? 0.22 : 0.38, 0.008));
+    for (const d of doors) fitGroup.add(flatPoly(d.swing, d.blocked ? 0xd64541 : 0xd99a2b, d.blocked ? 0.38 : 0.16, 0.006));
+    problems.forEach(p => p.ids.forEach(id => now.add(id)));
+    $('fitCount').textContent = `(${problems.length})`;
+    $('tFit').textContent = problems.length ? `Check fit · ${problems.length}` : 'Check fit · ok';
+    $('fitList').innerHTML = problems.map(p => `<li data-id="${p.ids[0]}">${esc(p.text)}</li>`).join('')
+      || '<li class="ok">Everything fits: no overlaps, nothing in walls or door swings, and every piece has its free space.</li>';
+  }
+  for (const id of tinted) if (!now.has(id)) tint(id, false);
+  for (const id of now) tint(id, true);
+  tinted = now;
+}
+function setFit(on) {
+  fitOn = on; $('tFit').classList.toggle('on', on); $('fitCard').hidden = !on;
+  if (!on) $('tFit').textContent = 'Check fit';
+  refreshFit();
+}
+$('fitList').onclick = e => { const li = e.target.closest('li[data-id]'); if (li && findItem(li.dataset.id)) select({ kind:'item', id:li.dataset.id }); };
+
+/* ---------------- GAPS: distance from the selected piece to the nearest wall or piece on each side ---------------- */
+const gapGroup = new THREE.Group(); scene.add(gapGroup);
+let gapKey = '';
+function updateGaps() {
+  const it = selected?.kind === 'item' && !measuring ? findItem(selected.id) : null;
+  const gaps = [];
+  if (it && it.kind !== 'note') {
+    const me = bounds(itemPoly(it)), y0 = it.elev || 0, y1 = topOf(it);
+    const obs = WALL_FOOT.filter(w => vOverlap(y0, y1, w.y0, w.y1)).map(w => bounds(w.poly))
+      .concat(state.items.filter(o => o.id !== it.id && isSolid(o) && vOverlap(y0, y1, o.elev || 0, topOf(o))).map(o => bounds(itemPoly(o))));
+    for (const [axis, sign] of [['x', 1], ['x', -1], ['z', 1], ['z', -1]]) {
+      const across = axis === 'x' ? 'z' : 'x', face = sign > 0 ? me[axis + '1'] : me[axis + '0'];
+      let best = null;
+      for (const o of obs) {
+        const lo = Math.max(me[across + '0'], o[across + '0']), hi = Math.min(me[across + '1'], o[across + '1']);
+        if (hi - lo < 1) continue; // not beside this side
+        const d = sign > 0 ? o[axis + '0'] - face : face - o[axis + '1'];
+        if (d > -0.5 && (!best || d < best.d)) best = { d:Math.max(d, 0), mid:(lo + hi) / 2 };
+      }
+      if (best && best.d >= 1 && best.d <= 400) {
+        const at = v => axis === 'x' ? [v, best.mid] : [best.mid, v];
+        gaps.push([at(face), at(face + sign * best.d), best.d]);
+      }
+    }
+  }
+  const key = gaps.map(g => g.flat().map(v => Math.round(v)).join(',')).join('|') + (it ? '@' + (it.elev || 0) : '');
+  if (key === gapKey) return;
+  gapKey = key; clearGroup(gapGroup);
+  const y = M(it?.elev || 0) + 0.02;
+  for (const [a, b, d] of gaps) dimension(gapGroup, a, b, y, 0x2f6f9f, cmLabel(d), 'rgba(47,111,159,0.92)');
+}
+
+/* ---------------- MEASURE ---------------- */
+const measureGroup = new THREE.Group(); scene.add(measureGroup);
+let measuring = false, mStart = null, mHover = null;
+const measures = []; // [[x, z], [x, z]] pairs in cm, kept until cleared (not saved with the design)
+function snapPlan(p, e) { // snap to wall and furniture corners, then edges
+  if (e.altKey) return [Math.round(p[0]), Math.round(p[1])];
+  const polys = WALL_FOOT.filter(w => w.y0 < LOW).map(w => w.poly).concat(state.items.filter(it => isSolid(it) && (it.elev || 0) < LOW).map(it => itemPoly(it)));
+  let best = null, bd = 6;
+  for (const P of polys) for (const c of P) { const d = Math.hypot(c[0] - p[0], c[1] - p[1]); if (d < bd) { bd = d; best = c; } }
+  if (best) return [best[0], best[1]];
+  bd = 5;
+  for (const P of polys) for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1;
+    const t = THREE.MathUtils.clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2, 0, 1), q = [a[0] + t * dx, a[1] + t * dz];
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < bd) { bd = d; best = q; }
+  }
+  return best || [Math.round(p[0]), Math.round(p[1])];
+}
+function measurePoint(e) {
+  setNdc(e); const f = floorPoint(); if (!f) return null;
+  const p = snapPlan([f.x * 100, f.z * 100], e);
+  if (mStart && e.shiftKey) { if (Math.abs(p[0] - mStart[0]) > Math.abs(p[1] - mStart[1])) p[1] = mStart[1]; else p[0] = mStart[0]; }
+  return p;
+}
+function drawMeasures() {
+  clearGroup(measureGroup);
+  const all = measures.concat(mStart && mHover ? [[mStart, mHover]] : []);
+  for (const [a, b] of all) dimension(measureGroup, a, b, 0.03, 0xb85c38, cmLabel(Math.hypot(b[0] - a[0], b[1] - a[1])), 'rgba(184,92,56,0.95)');
+  if (measuring && mHover) {
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.035, 20), new THREE.MeshBasicMaterial({ color:0xb85c38, depthTest:false }));
+    dot.rotation.x = -Math.PI / 2; dot.position.set(M(mHover[0]), 0.031, M(mHover[1])); dot.renderOrder = 12; measureGroup.add(dot);
+  }
+  $('mText').firstElementChild.textContent = mStart ? 'Click the second point' : 'Measuring';
+}
+function setMeasuring(on) {
+  measuring = on; mStart = null; mHover = null;
+  $('tMeasure').classList.toggle('on', on); $('measureBar').classList.toggle('show', on);
+  renderer.domElement.style.cursor = on ? 'crosshair' : '';
+  if (on) select(null);
+  drawMeasures();
+}
+$('mUndo').onclick = () => { measures.pop(); drawMeasures(); };
+$('mClear').onclick = () => { measures.length = 0; mStart = null; drawMeasures(); };
+$('mDone').onclick = () => setMeasuring(false);
+
 /* ---------------- POINTER ---------------- */
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let drag = null, down = null;
@@ -980,7 +1253,7 @@ function hitItem() {
 }
 renderer.domElement.addEventListener('pointerdown', e => {
   down = { x:e.clientX, y:e.clientY };
-  if (e.button !== 0) return;
+  if (e.button !== 0 || measuring) return; // while measuring, dragging only orbits
   setNdc(e);
   const id = hitItem();
   if (id) {
@@ -993,7 +1266,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
   }
 });
 renderer.domElement.addEventListener('pointermove', e => {
+  if (measuring) { const p = measurePoint(e); if (p) { mHover = p; drawMeasures(); } return; }
   if (!drag) return;
+  fitDirty = true;
   setNdc(e); const p = floorPoint(); if (!p) return;
   const it = findItem(drag.id), snap = e.altKey ? 1 : 5;
   it.x = Math.round(((p.x + drag.ox) * 100) / snap) * snap;
@@ -1003,6 +1278,7 @@ renderer.domElement.addEventListener('pointermove', e => {
   const g = objs.get(it.id); g.position.x = M(it.x); g.position.z = M(it.z); selBox.setFromObject(g);
 });
 renderer.domElement.addEventListener('dblclick', e => { // fly to the room under the pointer
+  if (measuring) return;
   setNdc(e); if (hitItem()) return;
   const fh = ray.intersectObjects(floorsGroup.children)[0]; if (!fh) return;
   const r = ROOMS.find(x => x.id === fh.object.userData.roomId), cx = M(r.x + r.w / 2), cz = M(r.y + r.h / 2), sz = M(Math.max(r.w, r.h));
@@ -1016,6 +1292,12 @@ renderer.domElement.addEventListener('pointerup', e => {
     drag = null; controls.enabled = true; return;
   }
   if (!down || e.button !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+  if (measuring) {
+    const p = measurePoint(e); if (!p) return;
+    if (!mStart) mStart = p;
+    else { if (Math.hypot(p[0] - mStart[0], p[1] - mStart[1]) >= 1) measures.push([mStart, p]); mStart = null; }
+    mHover = p; drawMeasures(); return;
+  }
   setNdc(e);
   if (hitItem()) return;
   const wh = ray.intersectObjects([...wallsGroup.children, ...treatGroup.children], true).find(h => h.object.userData.winId || h.object.parent?.userData.winId);
@@ -1028,6 +1310,13 @@ window.addEventListener('keydown', e => {
   if (e.target.matches('input, textarea')) return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (!mod && !e.altKey && e.key.toLowerCase() === 'm') { setMeasuring(!measuring); return; }
+  if (!mod && !e.altKey && e.key.toLowerCase() === 'f') { setFit(!fitOn); return; }
+  if (measuring) {
+    if (e.key === 'Escape') { if (mStart) { mStart = null; drawMeasures(); } else setMeasuring(false); }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); measures.pop(); drawMeasures(); }
+    return;
+  }
   if (selected?.kind !== 'item') { if (e.key === 'Escape') select(null); return; }
   const it = findItem(selected.id); if (!it) return;
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); action('del'); }
@@ -1073,13 +1362,15 @@ $('tDoorsClosed').onclick = () => {
 $('tLabels').onclick = () => toggle($('tLabels'), labelsGroup);
 $('tPipes').onclick = () => toggle($('tPipes'), pipesGroup);
 $('tLights').onclick = () => setLightsOn(!lightsOn);
+$('tMeasure').onclick = () => setMeasuring(!measuring);
+$('tFit').onclick = () => setFit(!fitOn);
 $('undo').onclick = undo;
 $('wallColor').addEventListener('focus', pushUndo);
 $('wallColor').addEventListener('input', e => { state.wallColor = e.target.value; wallMat.color.set(state.wallColor); save(); });
 $('shot').onclick = () => {
-  selBox.visible = false; if (dimSprite) dimSprite.visible = false; renderer.render(scene, camera);
+  selBox.visible = false; gapGroup.visible = false; if (dimSprite) dimSprite.visible = false; renderer.render(scene, camera);
   const a = document.createElement('a'); a.href = renderer.domElement.toDataURL('image/png'); a.download = 'apartment-3d.png'; a.click();
-  if (dimSprite) dimSprite.visible = true; select(selected);
+  if (dimSprite) dimSprite.visible = true; gapGroup.visible = true; select(selected);
 };
 $('export').onclick = () => {
   const a = document.createElement('a');
@@ -1103,15 +1394,16 @@ $('clearAll').onclick = () => {
 $('loadCurrent').onclick = () => {
   pushUndo();
   const cur = [ // name, kind, x, z, w, d, h, rot, color
-    ['Sink counter','box',95,197,58,105,90,0,'#f2efe8'], ['Fridge','box',207,221,54,58,185,0,'#dfe3e6'],
+    // every piece faces into its room (front = the side you use), so the fit check reads them correctly
+    ['Sink counter','box',95,197,105,58,90,270,'#f2efe8'], ['Fridge','box',207,221,54,58,185,180,'#dfe3e6'],
     ['Kitchen table','table',209,122,50,60,75,0,'#a77d55'], ['Oven','box',205,35,58,58,90,0,'#d6d6d3'],
-    ['Shoe cabinet','box',182,347,125,28,100,180,'#e8e4dc'], ['Sofa','sofa',370,49,200,85,85,0,'#8a8f98'],
-    ['TV wall unit','box',755,165,270,40,180,270,'#e8e4dc'], ['Rug','rug',565,195,270,170,1,0,'#b7a48a'],
+    ['Shoe cabinet','box',182,345,125,28,100,180,'#e8e4dc'], ['Sofa','sofa',370,49,200,85,85,0,'#8a8f98'],
+    ['TV wall unit','box',754,165,270,40,180,90,'#e8e4dc'], ['Rug','rug',565,195,270,170,1,0,'#b7a48a'],
     ['Armchair','sofa',555,286,70,75,85,180,'#b48a68'], ['Armchair','sofa',635,286,70,75,85,180,'#b48a68'],
     ['Dressing table','box',695,28,70,40,75,0,'#c7ad8a'], ['Balcony cabinet','box',458,-67,60,45,75,0,'#c9c3b6'],
     ['Balcony stool','stool',518,-65,40,40,45,0,'#5c5c5c'], ['Bathtub','tub',515,413,70,154,55,0,'#f7f7f5'],
     ['Toilet','toilet',385,365,36,58,78,0,'#f7f7f5'], ['Washbasin','basin',444,355,48,38,85,0,'#f7f7f5'],
-    ['Wardrobe','box',291,690,200,60,220,90,'#efeae0'], ['Bed 140×200','bed',489,585,140,200,50,270,'#c8b79c'],
+    ['Wardrobe','box',291,690,200,60,220,270,'#efeae0'], ['Bed 140×200','bed',489,585,140,200,50,90,'#c8b79c'],
     ['Desk','table',435,792,130,54,75,180,'#c7ad8a'],
   ];
   for (const [name, kind, x, z, w, d, h, rot, color] of cur) state.items.push({ id:uid(), name, kind, x, z, w, d, h, rot, color, elev:0 });
@@ -1129,7 +1421,8 @@ renderer.setAnimationLoop(() => {
     camera.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.t0, fly.t1, e);
     if (k >= 1) fly = null;
   }
-  controls.update(); updateDimLabel(); renderer.render(scene, camera);
+  if (fitDirty) refreshFit();
+  controls.update(); updateDimLabel(); updateGaps(); renderer.render(scene, camera);
 });
 </script>
 </body>

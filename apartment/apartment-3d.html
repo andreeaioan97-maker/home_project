@@ -108,6 +108,7 @@
   <button id="tWalls" title="Full-height walls or cut-away walls">Walls: cut 1 m</button>
   <button id="tLights" title="Switch the placed lights on to preview them (evening mode)">Lights: off</button>
   <button id="tDoors" class="on">Doors</button>
+  <button id="tDoorsClosed" title="Close or open all the doors">Doors: open</button>
   <button id="tLabels" class="on">Labels</button>
   <button id="tPipes" class="on">Plumbing</button>
   <span class="spacer"></span>
@@ -221,11 +222,13 @@ const CATALOG = {
   'Kitchen & dining': [
     ['Base cabinet','box',60,60,90,'#f2efe8'], ['Tall cabinet','box',60,60,210,'#f2efe8'],
     ['Wall cabinet','box',60,35,70,'#f2efe8',145], ['Fridge','box',60,65,185,'#dfe3e6'],
+    ['Oven','oven',60,60,90,'#c9ccce'], ['Kitchen hood','hood',60,50,105,'#c9ccce',150],
+    ['Washing machine','washer',60,60,85,'#f4f4f2'],
     ['Dining table','table',120,80,75,'#a77d55'], ['Round table','roundtable',90,90,75,'#a77d55'], ['Stool','stool',35,35,65,'#5c5c5c'],
   ],
   'Bathroom': [
     ['Bathtub','tub',70,160,55,'#f7f7f5'], ['Shower','shower',90,90,200,'#f7f7f5'], ['Toilet','toilet',38,62,78,'#f7f7f5'],
-    ['Washbasin','basin',60,45,85,'#f7f7f5'], ['Washing machine','box',60,60,85,'#f4f4f2'],
+    ['Washbasin','basin',60,45,85,'#f7f7f5'], ['Washing machine','washer',60,60,85,'#f4f4f2'],
   ],
   'Lighting': [ // ceiling-mounted pieces hang from the ceiling (elev = ceiling height)
     ['Pendant','pendant',35,35,60,'#2f2f2f',WALL_H], ['Pendant large','pendant',60,60,80,'#e8e4dc',WALL_H], ['Flush ceiling light','flush',40,40,10,'#f2efe8',WALL_H],
@@ -514,17 +517,20 @@ function buildTreatments() {
     }
   }
 }
+let doorsClosed = false;
 function buildDoors() {
   doorsGroup.clear();
   const leafMat = new THREE.MeshStandardMaterial({ color:0xe9e2d3, roughness:0.7 });
   const arcMat = new THREE.LineDashedMaterial({ color:0x8a8478, dashSize:0.06, gapSize:0.05 });
   for (const [h, o, c] of DOOR_LEAVES) {
-    const dx = o[0] - h[0], dy = o[1] - h[1], len = Math.hypot(dx, dy);
+    const e = doorsClosed ? c : o; // leaf runs from the hinge to the open or the closed end
+    const dx = e[0] - h[0], dy = e[1] - h[1], len = Math.hypot(dx, dy);
     const lh = Math.min(2.0, M(wallHeight) - 0.05);
     const leaf = new THREE.Mesh(new THREE.BoxGeometry(M(len), lh, 0.04), leafMat);
     leaf.position.set(M(h[0] + dx / 2), lh / 2, M(h[1] + dy / 2));
     leaf.rotation.y = -Math.atan2(dy, dx);
     leaf.castShadow = true; doorsGroup.add(leaf);
+    if (doorsClosed) continue; // a closed door has no visible swing
     const a0 = Math.atan2(dy, dx), a1raw = Math.atan2(c[1] - h[1], c[0] - h[0]);
     let d = a1raw - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
     const pts = [];
@@ -623,6 +629,27 @@ const BUILD = {
     const m = mat(c);
     addCyl(g, w / 2, w / 2, 0.04, 0, h - 0.02, 0, m);
     for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; addCyl(g, 0.015, 0.015, h - 0.04, Math.cos(a) * w * 0.35, (h - 0.04) / 2, Math.sin(a) * w * 0.35, m, 8); }
+  },
+  // --- kitchen equipment ---
+  washer(g, w, h, d, c) {
+    addBox(g, w, h, d, 0, h / 2, 0, mat(c));
+    addBox(g, w * 0.9, h * 0.12, 0.01, 0, h * 0.91, d / 2 + 0.005, mat(shade(c, -0.08)), false); // control panel
+    const r = Math.min(w, h) * 0.3, cy = h * 0.45;
+    addCyl(g, r, r, 0.03, 0, cy, d / 2 + 0.015, mat('#9a9ea2', { metalness:0.6, roughness:0.35 }), 36).rotation.x = Math.PI / 2;
+    addCyl(g, r * 0.78, r * 0.78, 0.035, 0, cy, d / 2 + 0.017, mat('#2c3238', { roughness:0.15 }), 36).rotation.x = Math.PI / 2;
+  },
+  oven(g, w, h, d, c) {
+    addBox(g, w, h, d, 0, h / 2, 0, mat(c, { metalness:0.5, roughness:0.4 }));
+    addBox(g, w * 0.92, h * 0.12, 0.01, 0, h * 0.9, d / 2 + 0.005, mat('#2a2a2a', { roughness:0.3 }), false); // control strip
+    addBox(g, w * 0.92, h * 0.62, 0.012, 0, h * 0.44, d / 2 + 0.006, mat('#1d1f22', { roughness:0.12 }), false); // glass door
+    addBox(g, w * 0.7, 0.02, 0.025, 0, h * 0.78, d / 2 + 0.03, mat('#b5b8bb', { metalness:0.8, roughness:0.3 }), false); // handle
+  },
+  hood(g, w, h, d, c) { // wall-mounted chimney hood; elev = underside height
+    const m = mat(c, { metalness:0.5, roughness:0.4 }), canopy = Math.min(0.25, h * 0.3);
+    addBox(g, w, 0.06, d, 0, 0.03, 0, m);
+    addBox(g, w * 0.8, 0.005, d * 0.7, 0, -0.002, 0, mat('#3a3a3a'), false); // grease filter
+    addBox(g, w * 0.7, canopy - 0.06, d * 0.75, 0, 0.06 + (canopy - 0.06) / 2, -d * 0.125, m);
+    addBox(g, w * 0.4, h - canopy, d * 0.5, 0, canopy + (h - canopy) / 2, -d / 4, m); // chimney
   },
   rug(g, w, h, d, c) { addBox(g, w, 0.012, d, 0, 0.006, 0, mat(c), false); },
   plant(g, w, h, d, c) {
@@ -1039,6 +1066,10 @@ $('tWalls').onclick = () => {
   $('tWalls').textContent = full ? 'Walls: full' : 'Walls: cut 1 m'; $('tWalls').classList.toggle('on', full); buildWalls(); buildDoors();
 };
 $('tDoors').onclick = () => toggle($('tDoors'), doorsGroup);
+$('tDoorsClosed').onclick = () => {
+  doorsClosed = !doorsClosed; $('tDoorsClosed').classList.toggle('on', doorsClosed);
+  $('tDoorsClosed').textContent = doorsClosed ? 'Doors: closed' : 'Doors: open'; buildDoors();
+};
 $('tLabels').onclick = () => toggle($('tLabels'), labelsGroup);
 $('tPipes').onclick = () => toggle($('tPipes'), pipesGroup);
 $('tLights').onclick = () => setLightsOn(!lightsOn);

@@ -1,0 +1,4 @@
+# Private: listing details and interior photos stay local only
+apartment/listing.md
+apartment/photos/
+.DS_Store

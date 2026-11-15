@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Apartment floor plan — draft v1</title>
+<style>
+  :root { --ink:#2b2b2b; --muted:#6b6b6b; --paper:#fbfaf7; --wall:#2b2b2b; }
+  body { margin:0; font-family: -apple-system, "Segoe UI", sans-serif; color:var(--ink); background:#eeece6; }
+  main { display:flex; gap:24px; padding:24px; align-items:flex-start; flex-wrap:wrap; }
+  .sheet { background:var(--paper); border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.12); padding:16px; }
+  h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:15px; margin:16px 0 6px; }
+  p, li { font-size:13px; line-height:1.45; } ul { padding-left:18px; margin:4px 0; }
+  .side { max-width:380px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px; background:#f3e3c3; }
+  label { font-size:13px; user-select:none; cursor:pointer; }
+  svg text { font-family: -apple-system, "Segoe UI", sans-serif; }
+  .room-name { font-size:17px; font-weight:600; fill:#2b2b2b; }
+  .room-dim { font-size:12px; fill:#555; }
+  .small { font-size:11px; fill:#666; }
+  .wall { fill:none; stroke:var(--wall); stroke-width:12; stroke-linejoin:miter; }
+  .gap { fill:var(--paper); }
+  .door { fill:none; stroke:#2b2b2b; stroke-width:2; }
+  .swing { fill:none; stroke:#888; stroke-width:1.2; stroke-dasharray:5 4; }
+  .win { stroke:#5b9bd5; stroke-width:6; }
+  .glass { stroke:#5b9bd5; stroke-width:4; }
+  .furn rect, .furn ellipse, .furn circle { fill:#fff; stroke:#9a9a9a; stroke-width:1.5; }
+  .furn text { font-size:10px; fill:#888; }
+  .fixed { stroke:#d9822b; stroke-width:3; fill:none; stroke-dasharray:8 4; }
+  .hide-furn .furn { display:none; }
+  .legend td { font-size:12px; padding:2px 8px 2px 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="sheet">
+    <h1>Apartment floor plan <span class="tag">draft v1 — not measured</span></h1>
+    <p style="margin:0 0 8px;color:var(--muted)">Room areas from the listing; shapes, door positions and furniture estimated from photos. 1 square on the grid = 1 m.</p>
+    <label><input type="checkbox" id="furn" checked> Show current furniture</label>
+    <svg id="plan" viewBox="-90 -170 960 1080" width="760" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+          <path d="M100 0H0V100" fill="none" stroke="#e4e1d8" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect x="-90" y="-170" width="960" height="1080" fill="url(#grid)"/>
+
+      <!-- ROOM FILLS (units: cm) -->
+      <rect x="388" y="-100" width="260" height="100" fill="#e3f0e6"/>   <!-- balcony -->
+      <rect x="60"  y="0"    width="180" height="255" fill="#f6ead2"/>   <!-- kitchen -->
+   <!-- pantry (demolished) -->
+      <rect x="0"   y="255"  width="255" height="110" fill="#eeeeee"/>   <!-- entrance hall -->
+      <rect x="255" y="0"    width="525" height="330" fill="#f3efe6"/>   <!-- living -->
+      <rect x="255" y="330"  width="95"  height="165" fill="#eeeeee"/>   <!-- inner hall -->
+      <rect x="350" y="330"  width="205" height="165" fill="#dfeef5"/>   <!-- bath -->
+      <rect x="255" y="495"  width="340" height="330" fill="#ece8f3"/>   <!-- bedroom -->
+
+      <!-- WALLS -->
+      <g class="wall">
+        <rect x="388" y="-100" width="260" height="100" style="stroke-width:6"/>
+        <path d="M66 138H124"/>   <!-- remaining half-wall of the demolished pantry, next to the sink -->
+        <rect x="60" y="0" width="180" height="255"/>
+        <rect x="0" y="255" width="255" height="110"/>
+        <rect x="255" y="0" width="525" height="330"/>
+        <path d="M240 0H255"/>
+        <rect x="255" y="330" width="95" height="165"/>
+        <rect x="350" y="330" width="205" height="165"/>
+        <rect x="255" y="495" width="340" height="330"/>
+      </g>
+
+      <!-- WINDOWS -->
+      <line class="win" x1="100" y1="0" x2="200" y2="0"/>           <!-- kitchen -->
+      <line class="win" x1="380" y1="825" x2="500" y2="825"/>       <!-- bedroom (front, park) -->
+      <polyline class="glass" points="388,-60 388,-100 648,-100 648,-60" fill="none"/> <!-- balcony glazing -->
+
+      <!-- DOORS: gap in wall + leaf + swing -->
+      <!-- entrance (from stairwell) -->
+      <rect class="gap" x="-8" y="270" width="16" height="80"/>
+      <line class="door" x1="0" y1="270" x2="80" y2="270" style="stroke-width:4"/>
+      <path class="swing" d="M0 350 A80 80 0 0 0 80 270"/>
+      <!-- kitchen door (glass) -->
+      <rect class="gap" x="126" y="247" width="70" height="16"/>
+      <line class="door" x1="126" y1="255" x2="126" y2="325"/>
+      <path class="swing" d="M196 255 A70 70 0 0 1 126 325"/>
+      <!-- pantry door -->
+      
+      <!-- living door from entrance hall -->
+      <rect class="gap" x="247" y="258" width="16" height="70"/>
+      <line class="door" x1="255" y1="258" x2="325" y2="258"/>
+      <path class="swing" d="M255 328 A70 70 0 0 0 325 258"/>
+      <!-- inner hall opening from living -->
+      <rect class="gap" x="262" y="322" width="80" height="16"/>
+      <line class="door" x1="342" y1="330" x2="342" y2="410"/>
+      <path class="swing" d="M262 330 A80 80 0 0 0 342 410"/>
+      <!-- bathroom door -->
+      <rect class="gap" x="342" y="345" width="16" height="65"/>
+      <line class="door" x1="350" y1="410" x2="415" y2="410"/>
+      <path class="swing" d="M350 345 A65 65 0 0 1 415 410"/>
+      <!-- bedroom door -->
+      <rect class="gap" x="262" y="487" width="80" height="16"/>
+      <line class="door" x1="342" y1="495" x2="342" y2="575"/>
+      <path class="swing" d="M262 495 A80 80 0 0 0 342 575"/>
+      <!-- balcony door -->
+      <rect class="gap" x="478" y="-8" width="80" height="16"/>
+      <line class="door" x1="478" y1="0" x2="478" y2="80"/>
+      <path class="swing" d="M558 0 A80 80 0 0 1 478 80"/>
+
+      <!-- FIXED: plumbing / gas (hard to move) -->
+      <line class="fixed" x1="66" y1="140" x2="66" y2="250"/>
+      <line class="fixed" x1="234" y1="10" x2="234" y2="200"/>
+      <line class="fixed" x1="549" y1="336" x2="549" y2="489"/>
+
+      <!-- FURNITURE (current, from photos) -->
+      <g class="furn">
+        <!-- kitchen -->
+        <rect x="66" y="145" width="58" height="105"/><rect x="76" y="160" width="38" height="40" rx="4"/><text x="72" y="235">sink</text>
+        <rect x="180" y="192" width="54" height="58"/><text x="190" y="225">fridge</text>
+        <rect x="184" y="92" width="50" height="60"/><text x="190" y="126">table</text>
+        <rect x="176" y="6" width="58" height="58"/><circle cx="192" cy="22" r="9"/><circle cx="218" cy="22" r="9"/><circle cx="192" cy="48" r="9"/><circle cx="218" cy="48" r="9"/><text x="190" y="78">oven</text>
+        <!-- entrance hall -->
+        <rect x="120" y="333" width="125" height="28"/><text x="140" y="352">shoe cabinet</text>
+        <!-- living -->
+        <rect x="270" y="6" width="200" height="85" rx="8"/><text x="345" y="52">sofa</text>
+        <rect x="735" y="30" width="40" height="270"/><text x="740" y="170" transform="rotate(90 745 165)">TV wall unit</text>
+        <rect x="430" y="110" width="270" height="170" rx="4" style="fill:none;stroke-dasharray:4 4"/><text x="540" y="200">rug</text>
+        <rect x="520" y="248" width="70" height="75" rx="10"/><rect x="600" y="248" width="70" height="75" rx="10"/><text x="560" y="243">armchairs</text>
+        <rect x="660" y="8" width="70" height="40"/><text x="664" y="32">dressing tbl</text>
+        <!-- balcony -->
+        <rect x="428" y="-90" width="60" height="45"/><rect x="498" y="-85" width="40" height="40" rx="6"/>
+        <!-- bathroom -->
+        <rect x="480" y="336" width="70" height="154" rx="14"/><text x="490" y="418">bathtub</text>
+        <rect x="365" y="336" width="40" height="16"/><ellipse cx="385" cy="374" rx="17" ry="24"/>
+        <rect x="420" y="336" width="48" height="38" rx="6"/><text x="428" y="392">sink</text>
+        <rect x="405" y="480" width="60" height="9"/>
+        <!-- bedroom -->
+        <rect x="261" y="590" width="60" height="200"/><text x="268" y="695">wardrobe</text>
+        <rect x="389" y="515" width="200" height="140" rx="4"/><rect x="560" y="525" width="24" height="120" rx="4"/><text x="460" y="590">bed 140×200</text>
+        <rect x="370" y="765" width="130" height="54"/><text x="415" y="796">desk</text>
+      </g>
+
+      <!-- LABELS -->
+      <text class="room-name" x="575" y="150">Living room</text>
+      <text class="room-dim" x="575" y="168">≈ 5.25 × 3.3 m · 17.3 m²</text>
+      <text class="room-name" x="370" y="700" style="font-size:17px">Bedroom</text>
+      <text class="room-dim" x="370" y="718">≈ 3.4 × 3.3 m · 11.2 m²</text>
+      <text class="room-name" x="128" y="154" style="font-size:15px">Kitchen</text>
+      <text class="room-dim" x="128" y="168">1.8 × 2.55 m</text>
+      <text class="room-dim" x="128" y="182">4.6 + 0.6 m²</text>
+            <text class="small" x="66" y="124" style="font-size:9px">half-wall</text>
+      <text class="room-name" x="20" y="320" style="font-size:14px">Entrance hall</text>
+      <text class="room-dim" x="20" y="336">2.8 m²</text>
+      <text class="small" x="262" y="455">Inner</text><text class="small" x="262" y="468">hall 1.5 m²</text>
+      <text class="room-name" x="380" y="452" style="font-size:14px">Bathroom</text>
+      <text class="room-dim" x="380" y="468">≈ 2.0 × 1.65 · 3.3 m²</text>
+      <text class="room-name" x="468" y="-110" style="font-size:14px">Enclosed balcony · 2.6 m²</text>
+      <text class="small" x="-85" y="300">stairwell</text>
+      <text class="small" x="-85" y="314">(guess) →</text>
+      <text class="small" x="300" y="860">Front facade — park side</text>
+      <text class="small" x="60" y="-20">Rear facade (guess)</text>
+
+      <!-- SCALE + NORTH -->
+      <g transform="translate(620 870)">
+        <line x1="0" y1="0" x2="100" y2="0" stroke="#2b2b2b" stroke-width="3"/>
+        <line x1="0" y1="-6" x2="0" y2="6" stroke="#2b2b2b" stroke-width="2"/><line x1="100" y1="-6" x2="100" y2="6" stroke="#2b2b2b" stroke-width="2"/>
+        <text x="30" y="20" class="small">1 m</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="sheet side">
+    <h2>Known (from the listing)</h2>
+    <ul>
+      <li>2 rooms, semi-decomandat, floor 4 of 4 (top), block from 1960, thermally rehabilitated, no seismic risk.</li>
+      <li>41.2 m² + 2.6 m² enclosed balcony = 44 m².</li>
+      <li>Entrance hall 2.8 · inner hall 1.5 · living 17.3 · kitchen 4.6 + pantry 0.6 · bedroom 11.2 (front, park) · bathroom 3.3 with tub · balcony 2.6 m².</li>
+    </ul>
+    <h2>Seen in the photos</h2>
+    <ul>
+      <li>Kitchen glass door off the entrance hall. The pantry (by the kitchen window) has been knocked down and is now part of the kitchen; only a half-wall next to the sink area remains.</li>
+      <li>Living room has its door near one corner, TV unit on the far wall, balcony door near the TV end.</li>
+      <li>Inner hall has the same wood floor as the living room → reached from the living room; leads to the bedroom, with another door (bathroom?) on its side.</li>
+    </ul>
+    <h2>Guessed — please check <span class="tag">?</span></h2>
+    <ul>
+      <li>Exact room shapes (only areas are known).</li>
+      <li>Which side the stairwell/entrance is on, and that the kitchen and balcony are on the rear facade.</li>
+      <li>That the bathroom door is in the inner hall (not the entrance hall).</li>
+      <li>Where the bathroom sits relative to the kitchen.</li>
+    </ul>
+    <h2>Legend</h2>
+    <table class="legend">
+      <tr><td><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#2b2b2b" stroke-width="6"/></svg></td><td>wall</td></tr>
+      <tr><td><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#5b9bd5" stroke-width="5"/></svg></td><td>window / glazing</td></tr>
+      <tr><td><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#d9822b" stroke-width="3" stroke-dasharray="8 4"/></svg></td><td>plumbing / gas (hard to move)</td></tr>
+      <tr><td><svg width="34" height="14"><path d="M2 12 A12 12 0 0 1 14 0" fill="none" stroke="#888" stroke-dasharray="3 3"/></svg></td><td>door swing</td></tr>
+    </table>
+    <h2>Before demolishing anything</h2>
+    <p>Block from 1960: interior walls may be load-bearing (concrete). Any wall removal needs a structural engineer's check and building approval.</p>
+  </div>
+</main>
+<script>
+  document.getElementById('furn').addEventListener('change', e =>
+    document.getElementById('plan').classList.toggle('hide-furn', !e.target.checked));
+</script>
+</body>
+</html>
